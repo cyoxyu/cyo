@@ -1,20 +1,35 @@
 # cyo
 
-自用补丁二进制镜像仓库，供 PaaS / 免费容器平台部署代理服务使用，避免依赖第三方镜像源。
+自编译二进制仓库，供 PaaS / 免费容器平台部署代理服务使用，避免依赖第三方镜像源。
+`web` / `bot` / `v1` / `sb` 全部由官方上游源码自行编译（Go 1.27.1，`CGO_ENABLED=0 -trimpath -ldflags "-s -w"`，静态链接 Linux ELF），构建溯源见下表。
 `Plugins/` 目录另存官方插件原版镜像，供各替换器在官方源不可达时兜底下载。
 
 ## 文件列表
 
-| 文件 | 说明 |
-|------|------|
-| `web` | Xray-core（VLESS / VMess / Trojan / Hysteria2 / Reality） |
-| `bot` | Cloudflared（Argo 隧道） |
-| `sb` / `sbx.so` | sing-box |
-| `v1` | 哪吒监控 agent（v1） |
-| `bot.so` / `v1.so` | 对应二进制的 `.so` 后缀变体 |
-| `sbsh` | 辅助工具 |
+| 文件 | 说明 | 来源 |
+|------|------|------|
+| `web` | Xray-core（VLESS / Reality，官方源码，**不含 hy2 补丁**） | [XTLS/Xray-core](https://github.com/XTLS/Xray-core) @ 52a412d (v26.9.9) |
+| `bot` | Cloudflared（Argo 隧道） | [cloudflare/cloudflared](https://github.com/cloudflare/cloudflared) @ 0f222b3 |
+| `sb` | sing-box（tags: with_quic with_wireguard with_gvisor with_utls） | [SagerNet/sing-box](https://github.com/SagerNet/sing-box) @ f6ce1d5 |
+| `v1` | 哪吒监控 agent（v1），版本号 5.5.5（ldflags 注入） | [nezhahq/agent](https://github.com/nezhahq/agent) @ 6df74da |
+| `sbsh` | 辅助工具（历史遗留，未自编译） | - |
+| `bot.so` / `v1.so` / `sbx.so` / `web.so` | 历史下载版（未自编译，供 FFI 方案使用） | - |
 
 目录结构按架构区分：`amd64/`、`arm64/`。
+
+## 构建方法（2026-09-11 构建）
+
+```bash
+# web = Xray-core
+cd Xray-core/main && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ../sbx-so/amd64/web .
+# bot = cloudflared
+cd cloudflared && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ../sbx-so/amd64/bot ./cmd/cloudflared
+# v1 = 哪吒 agent（必须注入版本号，否则哪吒后台版本显示为空；改版本号改 -X 后面的值即可）
+cd agent && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/nezhahq/agent/pkg/monitor.Version=5.5.5" -o ../sbx-so/amd64/v1 ./cmd/agent
+# sb = sing-box（注意：新版本 with_ech tag 已废弃，不要再加）
+cd sing-box && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -tags "with_quic with_wireguard with_gvisor with_utls" -o ../sbx-so/amd64/sb ./cmd/sing-box
+# arm64 把 GOARCH 换成 arm64 即可
+```
 
 ## 下载地址
 
