@@ -12,7 +12,7 @@
 | `bot` | Cloudflared（Argo 隧道） | [cloudflare/cloudflared](https://github.com/cloudflare/cloudflared) @ 0f222b3 |
 | `sb` | sing-box（tags: with_quic with_wireguard with_gvisor with_utls） | [SagerNet/sing-box](https://github.com/SagerNet/sing-box) @ f6ce1d5 |
 | `v1` | 哪吒监控 agent（v1），版本号 5.5.5（ldflags 注入） | [nezhahq/agent](https://github.com/nezhahq/agent) @ 6df74da |
-| `sbsh` | 辅助工具（历史遗留，未自编译） | - |
+| `sbsh` | **已弃用**（最后一个消费者 singbox-main 已改三进程模式，后续可下架） | - |
 | `bot.so` / `v1.so` / `sbx.so` / `web.so` | 历史下载版（未自编译，供 FFI 方案使用） | - |
 
 目录结构按架构区分：`amd64/`、`arm64/`。
