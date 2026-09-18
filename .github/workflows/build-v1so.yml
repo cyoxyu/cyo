@@ -28,6 +28,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: 'stable'
+          cache: false
 
       - name: 安装 arm64 交叉编译器
         run: |
@@ -47,6 +48,11 @@ jobs:
             perl -0pi -e 's/(select \{\n\t+)(case <-reloadSigChan:)/${1}case <-libDone:\n\t\t\treturn\n\t\t\t${2}/' cmd/agent/main.go
             grep -q 'case <-libDone:' cmd/agent/main.go || { echo "patch run() failed"; exit 1; }
           }
+
+      - name: 生成配置方法（Apply 等，仓库不带生成产物）
+        run: |
+          cd /tmp/agent
+          go generate ./...
 
       - name: 编译 amd64
         run: |

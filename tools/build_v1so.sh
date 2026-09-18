@@ -73,6 +73,10 @@ grep -q 'case <-libDone:' cmd/agent/main.go || {
   grep -q 'case <-libDone:' cmd/agent/main.go || { echo "patch run() failed"; exit 1; }
 }
 
+# 3.5) 生成配置方法（Apply 等）。agent 仓库不带生成产物，缺这步会报
+#      "agentConfig.Apply undefined"，必须先 go generate
+go generate ./...
+
 # 4) 内存保护：无 swap 时尝试挂 2G swapfile；容器环境 swapon 常被禁止，失败不中止
 ensure_swap() {
   if [ "$(awk 'NR>1' /proc/swaps | wc -l)" -gt 0 ]; then
