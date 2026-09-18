@@ -73,24 +73,33 @@ grep -q 'case <-libDone:' cmd/agent/main.go || {
   grep -q 'case <-libDone:' cmd/agent/main.go || { echo "patch run() failed"; exit 1; }
 }
 
-# 4) 内存保护：无 swap 时自动挂 2G swapfile（c-shared 编译峰值内存高，防 OOM 杀掉 SSH 会话）
+# 4) 内存保护：无 swap 时尝试挂 2G swapfile；容器环境 swapon 常被禁止，失败不中止
 ensure_swap() {
-  if [ "$(awk 'NR>1' /proc/swaps | wc -l)" -eq 0 ]; then
-    echo "未检测到 swap，创建 2G swapfile ..."
-    if [ ! -f /swapfile ]; then
-      fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
-      chmod 600 /swapfile
-      mkswap /swapfile >/dev/null
-    fi
-    swapon /swapfile
+  if [ "$(awk 'NR>1' /proc/swaps | wc -l)" -gt 0 ]; then
+    return 0
+  fi
+  echo "未检测到 swap，尝试创建 2G swapfile ..."
+  if [ ! -f /swapfile ]; then
+    fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+  fi
+  if swapon /swapfile 2>/dev/null; then
     echo "swap 已启用："
     awk 'NR>1' /proc/swaps
+  else
+    echo "!! swapon 失败（容器环境常见），删除 swapfile，改用低内存编译参数继续"
+    rm -f /swapfile
   fi
 }
 ensure_swap
 
-# 5) 交叉编译两个架构（c-shared 需要对应 gcc；-p 1 限制并行度压低编译内存峰值）
+# 5) 交叉编译两个架构（c-shared 需要对应 gcc）
+# -p 1 串行编译 + GOMEMLIMIT/GOGC 压内存峰值，无 swap 的小内存容器也能编
 export CGO_ENABLED=1
+export GOMAXPROCS=1
+export GOGC=50
+export GOMEMLIMIT="${GOMEMLIMIT:-300MiB}"
 BUILD_LDFLAGS="-s -w -X github.com/nezhahq/agent/pkg/monitor.Version=${INJECT_VERSION}"
 
 # amd64（本机）
