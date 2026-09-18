@@ -1,0 +1,91 @@
+name: 编译 v1.so
+
+on:
+  workflow_dispatch:
+    inputs:
+      AGENT_TAG:
+        description: 'nezhahq/agent 源码标签'
+        required: false
+        default: 'v1.9.0'
+        type: string
+      INJECT_VERSION:
+        description: '注入 monitor.Version 的版本号（哪吒后台显示）'
+        required: false
+        default: '5.5.5'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-v1so:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 签出本仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: 安装 arm64 交叉编译器
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: 拉取 agent 源码
+        run: git clone --depth 1 --branch "${{ inputs.AGENT_TAG }}" https://github.com/nezhahq/agent.git /tmp/agent
+
+      - name: 放入 c-shared 包装层（日志按配置静默）
+        run: cp tools/lib_shared.go /tmp/agent/cmd/agent/lib_shared.go
+
+      - name: run() 增加停止钩子
+        run: |
+          cd /tmp/agent
+          grep -q 'case <-libDone:' cmd/agent/main.go || {
+            perl -0pi -e 's/(select \{\n\t+)(case <-reloadSigChan:)/${1}case <-libDone:\n\t\t\treturn\n\t\t\t${2}/' cmd/agent/main.go
+            grep -q 'case <-libDone:' cmd/agent/main.go || { echo "patch run() failed"; exit 1; }
+          }
+
+      - name: 编译 amd64
+        run: |
+          cd /tmp/agent
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=1 \
+            go build -buildmode=c-shared -trimpath \
+            -ldflags "-s -w -X github.com/nezhahq/agent/pkg/monitor.Version=${{ inputs.INJECT_VERSION }}" \
+            -o v1_amd64.so ./cmd/agent
+
+      - name: 编译 arm64
+        run: |
+          cd /tmp/agent
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc \
+            go build -buildmode=c-shared -trimpath \
+            -ldflags "-s -w -X github.com/nezhahq/agent/pkg/monitor.Version=${{ inputs.INJECT_VERSION }}" \
+            -o v1_arm64.so ./cmd/agent
+
+      - name: 校验产物
+        run: file /tmp/agent/v1_amd64.so /tmp/agent/v1_arm64.so
+
+      - name: Actions 留档
+        uses: actions/upload-artifact@v4
+        with:
+          name: v1so-${{ github.run_id }}
+          path: |
+            /tmp/agent/v1_amd64.so
+            /tmp/agent/v1_arm64.so
+          retention-days: 7
+
+      - name: 提交产物到仓库
+        run: |
+          cp /tmp/agent/v1_amd64.so amd64/v1.so
+          cp /tmp/agent/v1_arm64.so arm64/v1.so
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add amd64/v1.so arm64/v1.so
+          if git diff --cached --quiet; then
+            echo "产物无变化，跳过提交"
+          else
+            git commit -m "rebuild v1.so (${{ inputs.AGENT_TAG }}, version ${{ inputs.INJECT_VERSION }}): silent agent logs"
+            git push
+          fi
